@@ -39,9 +39,6 @@ show_menu() {
     clear
     echo "Realm 转发管理脚本 v$VERSION"
     echo "================================================="
-    echo -e "${GREEN}作者：jinqians${NC}"
-    echo -e "${GREEN}网站：https://jinqians.com${NC}"
-    echo "================================================="
     echo "1. 安装 / 部署 Realm"
     echo "2. 添加转发规则"
     echo "3. 删除转发规则"
@@ -215,7 +212,7 @@ stop_service() {
 
 update_script() {
     echo -e "${GREEN}检查脚本更新中...${NC}"
-    remote_version=$(curl -s https://raw.githubusercontent.com/jinqians/realm/main/realm.sh | grep "^VERSION=" | cut -d'"' -f2)
+    remote_version=$(curl -s https://raw.githubusercontent.com/LisonChan/realm/refs/heads/main/realm.sh | grep "^VERSION=" | cut -d'"' -f2)
 
     if [ "$VERSION" = "$remote_version" ]; then
         echo -e "${GREEN}当前已是最新版本 v$VERSION${NC}"
@@ -226,7 +223,7 @@ update_script() {
     read -p "更新脚本？(y/n): " confirm
     [[ "$confirm" != "y" && "$confirm" != "Y" ]] && return
 
-    wget -O /tmp/realm.sh https://raw.githubusercontent.com/jinqians/realm/main/realm.sh
+    wget -O /tmp/realm.sh https://github.com/LisonChan/realm/raw/refs/heads/main/realm.sh
     if [ -s /tmp/realm.sh ]; then
         cp "$0" "$0.backup"
         mv /tmp/realm.sh "$0"
