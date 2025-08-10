@@ -9,9 +9,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
-# 版本号
-VERSION="1.2"
-
 # root权限检查
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}请以 root 用户运行此脚本！${NC}"
@@ -37,7 +34,7 @@ check_realm_service_status() {
 
 show_menu() {
     clear
-    echo "Realm 转发管理脚本 v$VERSION"
+    echo "Realm 转发管理脚本"
     echo "================================================="
     echo "1. 安装 / 部署 Realm"
     echo "2. 添加转发规则"
@@ -46,8 +43,7 @@ show_menu() {
     echo "5. 停止服务"
     echo "6. 重启服务"
     echo "7. 一键卸载"
-    echo "8. 更新脚本"
-    echo "9. 检查并安装最新版 Realm"
+    echo "8. 检查并安装最新版 Realm"
     echo "0. 退出脚本"
     echo "================================================="
     echo -e "Realm 状态：${realm_status_color}${realm_status}${NC}"
@@ -210,32 +206,6 @@ stop_service() {
     echo -e "${GREEN}Realm 服务已停止${NC}"
 }
 
-update_script() {
-    echo -e "${GREEN}检查脚本更新中...${NC}"
-    remote_version=$(curl -s https://raw.githubusercontent.com/LisonChan/realm/refs/heads/main/realm.sh | grep "^VERSION=" | cut -d'"' -f2)
-
-    if [ "$VERSION" = "$remote_version" ]; then
-        echo -e "${GREEN}当前已是最新版本 v$VERSION${NC}"
-        return
-    fi
-
-    echo -e "${GREEN}发现新版本 v$remote_version，是否更新？${NC}"
-    read -p "更新脚本？(y/n): " confirm
-    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && return
-
-    wget -O /tmp/realm.sh https://github.com/LisonChan/realm/raw/refs/heads/main/realm.sh
-    if [ -s /tmp/realm.sh ]; then
-        cp "$0" "$0.backup"
-        mv /tmp/realm.sh "$0"
-        chmod +x "$0"
-        echo -e "${GREEN}脚本已更新为 v$remote_version，原脚本已备份为 $0.backup${NC}"
-        exit 0
-    else
-        echo -e "${RED}更新失败，远程脚本为空或无法下载${NC}"
-        rm -f /tmp/realm.sh
-    fi
-}
-
 check_and_update_realm_binary() {
     echo -e "${GREEN}正在检查 Realm 最新版本...${NC}"
     cd /root/realm || mkdir -p /root/realm && cd /root/realm
@@ -249,7 +219,7 @@ check_and_update_realm_binary() {
 # 主程序循环
 while true; do
     show_menu
-    read -p "请选择一个选项 [0-9]: " choice
+    read -p "请选择一个选项 [0-8]: " choice
     case $choice in
         1) deploy_realm ;;
         2) add_forward ;;
@@ -258,10 +228,9 @@ while true; do
         5) stop_service ;;
         6) restart_service ;;
         7) uninstall_realm ;;
-        8) update_script ;;
-        9) check_and_update_realm_binary ;;
+        8) check_and_update_realm_binary ;;
         0) echo -e "${GREEN}退出脚本，再见！${NC}"; exit 0 ;;
-        *) echo -e "${RED}无效选项，请输入 0-9${NC}" ;;
+        *) echo -e "${RED}无效选项，请输入 0-8${NC}" ;;
     esac
     read -p "按任意键返回菜单..." dummy
 done
