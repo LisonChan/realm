@@ -97,11 +97,11 @@ EOF
     systemctl enable realm.service
 
     # 创建快捷方式
-    ln -sf "$0" /usr/local/bin/realm
+    ln -sf "$0" /usr/local/bin/rt
 
     realm_status="已安装"
     realm_status_color=$GREEN
-    echo -e "${GREEN}Realm 部署完成！可直接运行 realm 打开管理菜单${NC}"
+    echo -e "${GREEN}Realm 部署完成！可直接运行 rt 打开管理菜单${NC}"
 }
 
 uninstall_realm() {
@@ -110,7 +110,7 @@ uninstall_realm() {
     rm -f /etc/systemd/system/realm.service
     systemctl daemon-reload
     rm -rf /root/realm
-    rm -f /usr/local/bin/realm
+    rm -f /usr/local/bin/rt
     echo -e "${GREEN}Realm 已卸载${NC}"
 
     read -p "是否同时删除当前脚本本体？(y/n): " delete_self
