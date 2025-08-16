@@ -44,6 +44,7 @@ show_menu() {
     echo "6. 重启服务"
     echo "7. 一键卸载"
     echo "8. 检查并安装最新版 Realm"
+    echo "9. 检查并更新管理脚本"
     echo "0. 退出脚本"
     echo "================================================="
     echo -e "Realm 状态：${realm_status_color}${realm_status}${NC}"
@@ -146,45 +147,42 @@ remote = \"$ip:$remote_port\"" >> /root/realm/config.toml
     restart_service
 }
 
+# 修改后的删除规则
 delete_forward() {
     echo "当前转发规则："
-    local lines=($(grep -n 'listen =' /root/realm/config.toml))
-    if [ ${#lines[@]} -eq 0 ]; then
+    local rules=($(grep -n '^\[\[endpoints\]\]' /root/realm/config.toml | cut -d: -f1))
+    if [ ${#rules[@]} -eq 0 ]; then
         echo "未发现任何规则"
         return
     fi
 
-    declare -A port_map
-    local index=1
-    for line in "${lines[@]}"; do
-        local port=$(echo "$line" | grep -o '[0-9]\+')
-        port_map[$index]=$port
-        local lineno=$(echo "$line" | cut -d':' -f1)
-        local remote=$(sed -n "$((lineno+1))p" /root/realm/config.toml | cut -d'"' -f2)
-        echo "$index. 本地端口 $port -> $remote"
-        ((index++))
+    local total=${#rules[@]}
+    declare -A start_lines
+
+    for i in "${!rules[@]}"; do
+        local start=${rules[$i]}
+        local end=$((${rules[$i+1]:-99999} - 1))
+        local listen=$(sed -n "$((start+1))p" /root/realm/config.toml | cut -d'"' -f2)
+        local remote=$(sed -n "$((start+2))p" /root/realm/config.toml | cut -d'"' -f2)
+        echo "$((i+1)). $listen -> $remote"
+        start_lines[$((i+1))]=$start
     done
 
     read -p "请输入要删除的序号（回车返回）：" choice
     [ -z "$choice" ] && return
-    if ! [[ $choice =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -ge "$index" ]; then
+    if ! [[ $choice =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "$total" ]; then
         echo -e "${RED}无效选择${NC}"
         return
     fi
 
-    local target_port=${port_map[$choice]}
+    local start=${start_lines[$choice]}
+    local end=$((${rules[$choice]:-99999} - 1))
 
-    awk -v target="listen = \\\"[::]:$target_port\\\"" '
-    BEGIN { skip=0 }
-    /^\[\[endpoints\]\]/ { block=NR }
-    $0 ~ target { skip=1 }
-    skip && $0 ~ /^\[\[endpoints\]\]/ && NR!=block { skip=0 }
-    !skip { print }
-    ' /root/realm/config.toml > /root/realm/config.tmp && mv /root/realm/config.tmp /root/realm/config.toml
+    sed -i "${start},${end}d" /root/realm/config.toml
+    local port=$(echo "$listen" | grep -o '[0-9]\+')
+    configure_firewall $port "remove"
 
-    configure_firewall $target_port "remove"
-    echo -e "${GREEN}已删除端口 $target_port 的转发规则${NC}"
-
+    echo -e "${GREEN}已删除规则 #$choice${NC}"
     restart_service
 }
 
@@ -220,10 +218,27 @@ check_and_update_realm_binary() {
     restart_service
 }
 
+# 新增：检查并更新脚本
+check_and_update_script() {
+    echo -e "${GREEN}正在检查脚本更新...${NC}"
+    SCRIPT_PATH="$0"
+    TMP_SCRIPT="/tmp/realmtool_update.sh"
+    wget -O $TMP_SCRIPT https://gh-proxy.com/https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh
+    if [ $? -eq 0 ] && grep -q "Realm 转发一键管理脚本" $TMP_SCRIPT; then
+        chmod +x $TMP_SCRIPT
+        mv $TMP_SCRIPT $SCRIPT_PATH
+        echo -e "${GREEN}脚本已更新，请重新运行 rt${NC}"
+        exit 0
+    else
+        echo -e "${RED}更新失败，保持现有版本${NC}"
+        rm -f $TMP_SCRIPT
+    fi
+}
+
 # 主程序循环
 while true; do
     show_menu
-    read -p "请选择一个选项 [0-8]: " choice
+    read -p "请选择一个选项 [0-9]: " choice
     case $choice in
         1) deploy_realm ;;
         2) add_forward ;;
@@ -233,8 +248,9 @@ while true; do
         6) restart_service ;;
         7) uninstall_realm ;;
         8) check_and_update_realm_binary ;;
+        9) check_and_update_script ;;
         0) echo -e "${GREEN}退出脚本，再见！${NC}"; exit 0 ;;
-        *) echo -e "${RED}无效选项，请输入 0-8${NC}" ;;
+        *) echo -e "${RED}无效选项，请输入 0-9${NC}" ;;
     esac
     read -p "按任意键返回菜单..." dummy
 done
