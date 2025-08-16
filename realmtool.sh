@@ -97,8 +97,9 @@ EOF
     systemctl daemon-reload
     systemctl enable realm.service
 
-    # 创建快捷方式
-    ln -sf "$0" /usr/local/bin/rt
+    # 创建快捷方式（使用绝对路径）
+    ln -sf "$(realpath "$0")" /usr/local/bin/rt
+    chmod +x /usr/local/bin/rt
 
     realm_status="已安装"
     realm_status_color=$GREEN
