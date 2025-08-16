@@ -109,8 +109,8 @@ EOF
     systemctl daemon-reload
     systemctl enable realm.service
 
-    # 创建快捷方式（使用绝对路径）
-    ln -sf "$(realpath "$0")" /usr/local/bin/rt
+    # 创建固定软链 /usr/local/bin/rt
+    ln -sf /root/realmtool.sh /usr/local/bin/rt
     chmod +x /usr/local/bin/rt
 
     realm_status="已安装"
@@ -129,8 +129,8 @@ uninstall_realm() {
 
     read -p "是否同时删除当前脚本本体？(y/n): " delete_self
     if [[ "$delete_self" =~ ^[Yy]$ ]]; then
-        echo "删除脚本：$0"
-        rm -- "$0"
+        echo "删除脚本：/root/realmtool.sh"
+        rm -f /root/realmtool.sh
         exit 0
     fi
 }
@@ -232,9 +232,9 @@ check_and_update_realm_binary() {
 
 check_and_update_script() {
     echo -e "${GREEN}正在检查脚本更新...${NC}"
-    SCRIPT_PATH="$0"
+    SCRIPT_PATH="/root/realmtool.sh"
     TMP_SCRIPT="/tmp/realmtool_update.sh"
-    wget -O $TMP_SCRIPT https://gh-proxy.com/https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh
+    wget -O $TMP_SCRIPT https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh
     if [ $? -eq 0 ] && grep -q "Realm 转发一键管理脚本" $TMP_SCRIPT; then
         chmod +x $TMP_SCRIPT
         mv $TMP_SCRIPT $SCRIPT_PATH
