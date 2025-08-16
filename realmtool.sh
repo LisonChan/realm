@@ -73,7 +73,19 @@ deploy_realm() {
     tar -xvf realm.tar.gz
     chmod +x realm
 
-    [ ! -f "/root/realm/config.toml" ] && touch /root/realm/config.toml
+    # 创建 config.toml，如果不存在，保证 [network] 块存在
+    if [ ! -f "/root/realm/config.toml" ]; then
+        cat > /root/realm/config.toml <<EOF
+[network]
+no_tcp = false
+use_udp = true
+EOF
+    else
+        # 确保 [network] 块存在，不存在就追加
+        if ! grep -q "^\[network\]" /root/realm/config.toml; then
+            echo -e "\n[network]\nno_tcp = false\nuse_udp = true" >> /root/realm/config.toml
+        fi
+    fi
 
     cat > /etc/systemd/system/realm.service <<EOF
 [Unit]
@@ -148,7 +160,6 @@ remote = \"$ip:$remote_port\"" >> /root/realm/config.toml
     restart_service
 }
 
-# 修改后的删除规则
 delete_forward() {
     echo "当前转发规则："
     local rules=($(grep -n '^\[\[endpoints\]\]' /root/realm/config.toml | cut -d: -f1))
@@ -219,7 +230,6 @@ check_and_update_realm_binary() {
     restart_service
 }
 
-# 新增：检查并更新脚本
 check_and_update_script() {
     echo -e "${GREEN}正在检查脚本更新...${NC}"
     SCRIPT_PATH="$0"
