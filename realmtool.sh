@@ -79,6 +79,7 @@ deploy_realm() {
 [network]
 no_tcp = false
 use_udp = true
+
 EOF
     else
         # 确保 [network] 块存在，不存在就追加
