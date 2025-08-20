@@ -260,15 +260,28 @@ check_and_update_script() {
     echo -e "${GREEN}正在检查脚本更新...${NC}"
     SCRIPT_PATH="/root/realmtool.sh"
     TMP_SCRIPT="/tmp/realmtool_update.sh"
-    wget --no-check-certificate --no-proxy -O $TMP_SCRIPT https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh
-    if [ $? -eq 0 ] && grep -q "Realm 转发一键管理脚本" $TMP_SCRIPT; then
-        chmod +x $TMP_SCRIPT
-        mv $TMP_SCRIPT $SCRIPT_PATH
+    URL_GITHUB="https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh"
+    URL_JSDELIVR="https://cdn.jsdelivr.net/gh/LisonChan/realm@main/realmtool.sh"
+
+    echo -e "${GREEN}尝试从 GitHub 获取更新...${NC}"
+    if wget --no-check-certificate --no-proxy -O "$TMP_SCRIPT" "$URL_GITHUB"; then
+        echo -e "${GREEN}成功从 GitHub 下载更新${NC}"
+    elif wget --no-check-certificate --no-proxy -O "$TMP_SCRIPT" "$URL_JSDELIVR"; then
+        echo -e "${GREEN}成功从 jsDelivr 下载更新${NC}"
+    else
+        echo -e "${RED}更新失败，保持现有版本${NC}"
+        rm -f "$TMP_SCRIPT"
+        return
+    fi
+
+    if grep -q "Realm 转发一键管理脚本" "$TMP_SCRIPT"; then
+        chmod +x "$TMP_SCRIPT"
+        mv "$TMP_SCRIPT" "$SCRIPT_PATH"
         echo -e "${GREEN}脚本已更新，请重新运行 rt${NC}"
         exit 0
     else
-        echo -e "${RED}更新失败，保持现有版本${NC}"
-        rm -f $TMP_SCRIPT
+        echo -e "${RED}下载的脚本无效，更新中止${NC}"
+        rm -f "$TMP_SCRIPT"
     fi
 }
 
