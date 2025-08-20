@@ -64,16 +64,40 @@ configure_firewall() {
     fi
 }
 
+# ===================== 主要修复点：自动切换下载源 =====================
+download_realm_binary() {
+    local file_name=$1
+    local url_github="https://github.com/zhboner/realm/releases/latest/download/realm-x86_64-unknown-linux-gnu.tar.gz"
+    local url_jsdelivr="https://cdn.jsdelivr.net/gh/zhboner/realm@main/realm-x86_64-unknown-linux-gnu.tar.gz"
+
+    echo -e "${GREEN}尝试从 GitHub 下载 Realm...${NC}"
+    if wget --no-check-certificate --no-proxy -O "$file_name" "$url_github"; then
+        return 0
+    else
+        echo -e "${RED}从 GitHub 下载失败，尝试使用 jsDelivr 镜像...${NC}"
+        if wget --no-check-certificate --no-proxy -O "$file_name" "$url_jsdelivr"; then
+            return 0
+        else
+            echo -e "${RED}下载 Realm 失败，请检查网络或手动下载${NC}"
+            return 1
+        fi
+    fi
+}
+# ====================================================================
+
 deploy_realm() {
     mkdir -p /root/realm
     cd /root/realm
 
     echo -e "${GREEN}正在下载 Realm...${NC}"
-    wget -O realm.tar.gz https://github.com/zhboner/realm/releases/latest/download/realm-x86_64-unknown-linux-gnu.tar.gz
+    if ! download_realm_binary "realm.tar.gz"; then
+        echo -e "${RED}Realm 下载失败，安装中止${NC}"
+        return
+    fi
+
     tar -xvf realm.tar.gz
     chmod +x realm
 
-    # 创建 config.toml，如果不存在，保证 [network] 块存在
     if [ ! -f "/root/realm/config.toml" ]; then
         cat > /root/realm/config.toml <<EOF
 [network]
@@ -82,7 +106,6 @@ use_udp = true
 
 EOF
     else
-        # 确保 [network] 块存在，不存在就追加
         if ! grep -q "^\[network\]" /root/realm/config.toml; then
             echo -e "\n[network]\nno_tcp = false\nuse_udp = true" >> /root/realm/config.toml
         fi
@@ -110,7 +133,6 @@ EOF
     systemctl daemon-reload
     systemctl enable realm.service
 
-    # 创建固定软链 /usr/local/bin/rt
     ln -sf /root/realmtool.sh /usr/local/bin/rt
     chmod +x /usr/local/bin/rt
 
@@ -224,7 +246,10 @@ stop_service() {
 check_and_update_realm_binary() {
     echo -e "${GREEN}正在检查 Realm 最新版本...${NC}"
     cd /root/realm || mkdir -p /root/realm && cd /root/realm
-    wget -O realm_latest.tar.gz https://github.com/zhboner/realm/releases/latest/download/realm-x86_64-unknown-linux-gnu.tar.gz
+    if ! download_realm_binary "realm_latest.tar.gz"; then
+        echo -e "${RED}Realm 下载失败，更新中止${NC}"
+        return
+    fi
     tar -xvf realm_latest.tar.gz
     chmod +x realm
     echo -e "${GREEN}Realm 可执行文件已更新为最新版本！${NC}"
@@ -235,7 +260,7 @@ check_and_update_script() {
     echo -e "${GREEN}正在检查脚本更新...${NC}"
     SCRIPT_PATH="/root/realmtool.sh"
     TMP_SCRIPT="/tmp/realmtool_update.sh"
-    wget -O $TMP_SCRIPT https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh
+    wget --no-check-certificate --no-proxy -O $TMP_SCRIPT https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh
     if [ $? -eq 0 ] && grep -q "Realm 转发一键管理脚本" $TMP_SCRIPT; then
         chmod +x $TMP_SCRIPT
         mv $TMP_SCRIPT $SCRIPT_PATH
