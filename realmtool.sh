@@ -224,7 +224,7 @@ stop_service() {
 check_and_update_realm_binary() {
     echo -e "${GREEN}正在检查 Realm 最新版本...${NC}"
     cd /root/realm || mkdir -p /root/realm && cd /root/realm
-    wget -O realm_latest.tar.gz https://gh-proxy.com/https://github.com/zhboner/realm/releases/latest/download/realm-x86_64-unknown-linux-gnu.tar.gz
+    wget -O realm_latest.tar.gz https://github.com/zhboner/realm/releases/latest/download/realm-x86_64-unknown-linux-gnu.tar.gz
     tar -xvf realm_latest.tar.gz
     chmod +x realm
     echo -e "${GREEN}Realm 可执行文件已更新为最新版本！${NC}"
