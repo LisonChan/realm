@@ -2,7 +2,7 @@
 
 # =========================================
 # 描述: Realm 转发一键管理脚本（优化版）
-# 作者: Lison Chan + ChatGPT
+# 作者: ChatGPT
 # =========================================
 
 # 颜色定义
@@ -44,11 +44,21 @@ check_realm_service_status() {
 
 # 获取 Realm 最新版本下载链接
 get_latest_realm_url() {
+    arch=$(uname -m)
+    if [[ "$arch" == "x86_64" ]]; then
+        pkg="realm-x86_64-unknown-linux-gnu.tar.gz"
+    elif [[ "$arch" == "aarch64" ]]; then
+        pkg="realm-aarch64-unknown-linux-gnu.tar.gz"
+    else
+        echo -e "${RED}暂不支持当前架构: $arch${NC}"
+        exit 1
+    fi
+
     api_url="https://api.github.com/repos/zhboner/realm/releases/latest"
-    latest_url=$(curl -s "$api_url" | grep browser_download_url | grep linux | grep x86_64 | head -n1 | cut -d '"' -f4)
+    latest_url=$(curl -s "$api_url" | grep browser_download_url | grep "$pkg" | head -n1 | cut -d '"' -f4)
 
     if [ -z "$latest_url" ]; then
-        echo "https://cdn.jsdelivr.net/gh/zhboner/realm@main/realm-x86_64-unknown-linux-gnu.tar.gz"
+        echo "https://github.com/zhboner/realm/releases/latest/download/$pkg"
     else
         echo "$latest_url"
     fi
@@ -81,6 +91,7 @@ deploy_realm() {
 
     rm -f "$REALM_BIN"
     tar -xvf realm.tar.gz
+    chown root:root realm
     chmod +x "$REALM_BIN"
 
     # 如果没有配置文件则创建
@@ -239,64 +250,37 @@ check_and_update_realm_binary() {
     fi
     rm -f "$REALM_BIN"
     tar -xvf realm_latest.tar.gz
+    chown root:root realm
     chmod +x "$REALM_BIN"
     echo -e "${GREEN}Realm 可执行文件已更新为最新版本！${NC}"
     restart_service
 }
 
-# 检查并更新管理脚本
-check_and_update_script() {
-    echo -e "${GREEN}正在检查脚本更新...${NC}"
-    SCRIPT_PATH="/root/realmtool.sh"
-    TMP_SCRIPT="/tmp/realmtool_update.sh"
-    URL_GITHUB="https://raw.githubusercontent.com/LisonChan/realm/main/realmtool.sh"
-    URL_JSDELIVR="https://cdn.jsdelivr.net/gh/LisonChan/realm@main/realmtool.sh"
-
-    cp "$SCRIPT_PATH" "$SCRIPT_PATH.bak"
-
-    echo -e "${GREEN}尝试从 GitHub 获取更新...${NC}"
-    if wget --no-check-certificate --no-proxy -O "$TMP_SCRIPT" "$URL_GITHUB"; then
-        echo -e "${GREEN}成功从 GitHub 下载更新${NC}"
-    elif wget --no-check-certificate --no-proxy -O "$TMP_SCRIPT" "$URL_JSDELIVR"; then
-        echo -e "${GREEN}成功从 jsDelivr 下载更新${NC}"
-    else
-        echo -e "${RED}更新失败，保持现有版本${NC}"
-        rm -f "$TMP_SCRIPT"
-        return
-    fi
-
-    if grep -q "Realm 转发一键管理脚本" "$TMP_SCRIPT"; then
-        chmod +x "$TMP_SCRIPT"
-        mv "$TMP_SCRIPT" "$SCRIPT_PATH"
-        echo -e "${GREEN}脚本已更新，请重新运行 rt${NC}"
-        exit 0
-    else
-        echo -e "${RED}下载的脚本无效，已回滚旧版本${NC}"
-        rm -f "$TMP_SCRIPT"
-        mv "$SCRIPT_PATH.bak" "$SCRIPT_PATH"
-    fi
-}
-
 # 查看 Realm 状态
-check_realm_status() {
-    echo ""
-    echo -e "${YELLOW}====== Realm 当前状态 ======${NC}"
+show_realm_status() {
+    echo -e "\n${YELLOW}Realm 状态:${NC}"
+    echo "-----------------------------------"
     if [ ! -f "$REALM_BIN" ]; then
-        echo -e "${RED}Realm 未安装${NC}"
+        echo "Realm 未安装"
         return
     fi
 
-    version=$($REALM_BIN --version 2>/dev/null || echo "未知")
-    status=$(systemctl is-active realm && echo "运行中" || echo "未运行")
-    ports=$(grep -oP '\[::\]:\K[0-9]+' "$REALM_CONF" | tr '\n' ', ' | sed 's/, $//')
-    rules=$(grep -c '^\[\[endpoints\]\]' "$REALM_CONF")
+    echo -n "版本号: "
+    "$REALM_BIN" -v 2>/dev/null || echo "未知"
 
-    echo -e "版本号: ${GREEN}${version}${NC}"
-    echo -e "运行状态: ${GREEN}${status}${NC}"
-    echo -e "监听端口: ${GREEN}${ports:-无}${NC}"
-    echo -e "转发规则: ${GREEN}${rules} 条${NC}"
-    echo -e "日志位置: ${GREEN}/var/log/realm.log${NC}"
-    echo "============================="
+    echo -n "运行状态: "
+    if systemctl is-active --quiet realm; then
+        echo -e "${GREEN}正在运行${NC}"
+    else
+        echo -e "${RED}未运行${NC}"
+    fi
+
+    echo "监听端口: "
+    ss -tulnp | grep realm || echo "无监听端口"
+
+    echo "转发规则数量: $(grep -c '^\[\[endpoints\]\]' "$REALM_CONF" 2>/dev/null || echo 0)"
+    echo "日志位置: /var/log/realm.log"
+    echo "-----------------------------------"
 }
 
 # 显示菜单
@@ -313,7 +297,7 @@ show_menu() {
     echo "7. 一键卸载"
     echo "8. 检查并安装最新版 Realm"
     echo "9. 检查并更新管理脚本"
-    echo "10. 查看当前 Realm 状态"
+    echo "10. 查看 Realm 状态"
     echo "0. 退出脚本"
     echo "================================================="
     echo -e "Realm 状态：${realm_status_color}${realm_status}${NC}"
@@ -335,7 +319,7 @@ while true; do
         7) uninstall_realm ;;
         8) check_and_update_realm_binary ;;
         9) check_and_update_script ;;
-        10) check_realm_status ;;
+        10) show_realm_status ;;
         0) echo -e "${GREEN}退出脚本，再见！${NC}"; exit 0 ;;
         *) echo -e "${RED}无效选项，请输入 0-10${NC}" ;;
     esac
