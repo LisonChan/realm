@@ -1,8 +1,8 @@
 #!/bin/bash
-
 # =========================================
-# 描述: Realm 转发一键管理脚本（优化版）
-# 作者: ChatGPT
+# 描述: Realm 转发一键管理脚本（低内存优化版）
+# 作者: 原 ChatGPT + Grok后续优化
+# 优化点: 适配 512MB MiniBox，自动加 swap，强化 systemd 服务
 # =========================================
 
 # 颜色定义
@@ -20,12 +20,13 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Realm 安装状态
+# Realm 安装路径
 REALM_DIR="/root/realm"
 REALM_BIN="$REALM_DIR/realm"
 REALM_CONF="$REALM_DIR/config.toml"
 REALM_SERVICE="/etc/systemd/system/realm.service"
 
+# Realm 安装状态
 if [ -f "$REALM_BIN" ]; then
     realm_status="已安装"
     realm_status_color=$GREEN
@@ -42,7 +43,7 @@ check_realm_service_status() {
     fi
 }
 
-# 获取 Realm 最新版本下载链接
+# 获取最新版 Realm 下载链接
 get_latest_realm_url() {
     arch=$(uname -m)
     if [[ "$arch" == "x86_64" ]]; then
@@ -53,10 +54,8 @@ get_latest_realm_url() {
         echo -e "${RED}暂不支持当前架构: $arch${NC}"
         exit 1
     fi
-
     api_url="https://api.github.com/repos/zhboner/realm/releases/latest"
     latest_url=$(curl -s "$api_url" | grep browser_download_url | grep "$pkg" | head -n1 | cut -d '"' -f4)
-
     if [ -z "$latest_url" ]; then
         echo "https://github.com/zhboner/realm/releases/latest/download/$pkg"
     else
@@ -68,7 +67,6 @@ get_latest_realm_url() {
 download_realm_binary() {
     local file_name=$1
     local url=$(get_latest_realm_url)
-
     echo -e "${GREEN}尝试从：$url${NC}"
     if wget --no-check-certificate --no-proxy -O "$file_name" "$url"; then
         return 0
@@ -94,7 +92,7 @@ deploy_realm() {
     chown root:root realm
     chmod +x "$REALM_BIN"
 
-    # 如果没有配置文件则创建
+    # 创建默认配置文件
     if [ ! -f "$REALM_CONF" ]; then
         cat > "$REALM_CONF" <<EOF
 [network]
@@ -103,21 +101,28 @@ use_udp = true
 EOF
     fi
 
-    # 写入 systemd 服务文件
+    # 写入低内存优化版 systemd 服务文件
     cat > "$REALM_SERVICE" <<EOF
 [Unit]
 Description=realm
 After=network-online.target
-Wants=network-online.target systemd-networkd-wait-online.service
+Wants=network-online.target
+Requires=network-online.target
 
 [Service]
 Type=simple
 User=root
-Restart=on-failure
-RestartSec=5s
-LimitNOFILE=1048576
-ExecStart=$REALM_BIN -c $REALM_CONF
 WorkingDirectory=$REALM_DIR
+LimitNOFILE=1048576
+
+# 低内存机器关键优化
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=60
+StartLimitBurst=10
+TimeoutStartSec=300
+
+ExecStart=$REALM_BIN -c $REALM_CONF
 
 [Install]
 WantedBy=multi-user.target
@@ -127,6 +132,20 @@ EOF
     systemctl daemon-reload
     systemctl enable realm.service
 
+    # 为低内存 VPS 自动添加 1GB swap（如果不存在）
+    echo -e "${GREEN}为低内存 VPS 自动添加 1GB swap...${NC}"
+    if [ ! -f /swapfile ]; then
+        fallocate -l 1G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        echo -e "${GREEN}1GB swap 已成功添加并设为开机自动挂载${NC}"
+    else
+        echo -e "${YELLOW}检测到 swap 已存在，跳过添加${NC}"
+    fi
+
+    # 创建快捷命令
     ln -sf "$SCRIPT_PATH" /usr/local/bin/rt
     chmod +x /usr/local/bin/rt
 
@@ -137,13 +156,21 @@ EOF
 
 # 卸载 Realm
 uninstall_realm() {
-    systemctl stop realm
-    systemctl disable realm
+    systemctl stop realm 2>/dev/null
+    systemctl disable realm 2>/dev/null
     rm -f "$REALM_SERVICE"
     systemctl daemon-reload
     rm -rf "$REALM_DIR"
     rm -f /usr/local/bin/rt
+
     echo -e "${GREEN}Realm 已卸载${NC}"
+    read -p "是否同时删除 1GB swapfile？(y/n，默认n): " del_swap
+    if [[ "$del_swap" =~ ^[Yy]$ ]]; then
+        swapoff /swapfile 2>/dev/null
+        rm -f /swapfile
+        sed -i '/\/swapfile/d' /etc/fstab
+        echo -e "${GREEN}swapfile 已删除${NC}"
+    fi
 
     read -p "是否同时删除当前脚本本体？(y/n): " delete_self
     if [[ "$delete_self" =~ ^[Yy]$ ]]; then
@@ -159,22 +186,20 @@ add_forward() {
         read -p "请输入本地监听端口: " port
         read -p "请输入目标IP或域名: " ip
         read -p "请输入目标端口: " remote_port
-
         if grep -q "\[::\]:$port" "$REALM_CONF"; then
             echo -e "${RED}端口 $port 的转发规则已存在！${NC}"
             continue
         fi
+        cat >> "$REALM_CONF" <<EOF
 
-        echo "[[endpoints]]
-listen = \"[::]:$port\"
-remote = \"$ip:$remote_port\"" >> "$REALM_CONF"
-
+[[endpoints]]
+listen = "[::]:$port"
+remote = "$ip:$remote_port"
+EOF
         echo -e "${GREEN}添加成功：$port -> $ip:$remote_port${NC}"
-
         read -p "继续添加下一个？(y/n): " cont
         [[ "$cont" != "y" && "$cont" != "Y" ]] && break
     done
-
     restart_service
 }
 
@@ -186,10 +211,8 @@ delete_forward() {
         echo "未发现任何规则"
         return
     fi
-
     local total=${#rules[@]}
     declare -A start_lines
-
     for i in "${!rules[@]}"; do
         local start=${rules[$i]}
         local listen=$(sed -n "$((start+1))p" "$REALM_CONF" | cut -d'"' -f2)
@@ -197,24 +220,21 @@ delete_forward() {
         echo "$((i+1)). $listen -> $remote"
         start_lines[$((i+1))]=$start
     done
-
     read -p "请输入要删除的序号（回车返回）:" choice
     [ -z "$choice" ] && return
     if ! [[ $choice =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "$total" ]; then
         echo -e "${RED}无效选择${NC}"
         return
     fi
-
     local start=${start_lines[$choice]}
-    local end=$((${rules[$choice]:-99999} - 1))
-
+    local next_start=${rules[$choice]:-$(($(wc -l < "$REALM_CONF") + 1))}
+    local end=$((next_start - 1))
     sed -i "${start},${end}d" "$REALM_CONF"
-
     echo -e "${GREEN}已删除规则 #$choice${NC}"
     restart_service
 }
 
-# 重启 Realm 服务
+# 重启服务
 restart_service() {
     systemctl daemon-reload
     systemctl restart realm
@@ -226,7 +246,7 @@ restart_service() {
     fi
 }
 
-# 启动 Realm 服务
+# 启动服务
 start_service() {
     systemctl daemon-reload
     systemctl enable realm
@@ -234,18 +254,18 @@ start_service() {
     echo -e "${GREEN}Realm 服务已启动${NC}"
 }
 
-# 停止 Realm 服务
+# 停止服务
 stop_service() {
     systemctl stop realm
     echo -e "${GREEN}Realm 服务已停止${NC}"
 }
 
-# 检查并更新 Realm 可执行文件
+# 检查并更新 Realm 二进制
 check_and_update_realm_binary() {
     echo -e "${GREEN}正在检查 Realm 最新版本...${NC}"
-    cd "$REALM_DIR" || mkdir -p "$REALM_DIR" && cd "$REALM_DIR"
+    cd "$REALM_DIR" || { mkdir -p "$REALM_DIR" && cd "$REALM_DIR"; }
     if ! download_realm_binary "realm_latest.tar.gz"; then
-        echo -e "${RED}Realm 下载失败，更新中止${NC}"
+        echo -e "${RED}下载失败，更新中止${NC}"
         return
     fi
     rm -f "$REALM_BIN"
@@ -256,7 +276,7 @@ check_and_update_realm_binary() {
     restart_service
 }
 
-# 查看 Realm 状态
+# 查看状态
 show_realm_status() {
     echo -e "\n${YELLOW}Realm 状态:${NC}"
     echo "-----------------------------------"
@@ -264,29 +284,25 @@ show_realm_status() {
         echo "Realm 未安装"
         return
     fi
-
     echo -n "版本号: "
     "$REALM_BIN" -v 2>/dev/null || echo "未知"
-
     echo -n "运行状态: "
     if systemctl is-active --quiet realm; then
         echo -e "${GREEN}正在运行${NC}"
     else
         echo -e "${RED}未运行${NC}"
     fi
-
     echo "监听端口: "
     ss -tulnp | grep realm || echo "无监听端口"
-
     echo "转发规则数量: $(grep -c '^\[\[endpoints\]\]' "$REALM_CONF" 2>/dev/null || echo 0)"
-    echo "日志位置: /var/log/realm.log"
+    echo "日志位置: journalctl -u realm"
     echo "-----------------------------------"
 }
 
 # 显示菜单
 show_menu() {
     clear
-    echo "Realm 转发管理脚本"
+    echo "Realm 转发管理脚本（低内存优化版）"
     echo "================================================="
     echo "1. 安装 / 部署 Realm"
     echo "2. 添加转发规则"
@@ -295,8 +311,7 @@ show_menu() {
     echo "5. 停止服务"
     echo "6. 重启服务"
     echo "7. 一键卸载"
-    echo "8. 检查并安装最新版 Realm"
-    echo "9. 检查并更新管理脚本"
+    echo "8. 检查并更新 Realm 二进制"
     echo "10. 查看 Realm 状态"
     echo "0. 退出脚本"
     echo "================================================="
@@ -305,7 +320,7 @@ show_menu() {
     check_realm_service_status
 }
 
-# 主程序循环
+# 主循环
 while true; do
     show_menu
     read -p "请选择一个选项 [0-10]: " choice
@@ -318,7 +333,6 @@ while true; do
         6) restart_service ;;
         7) uninstall_realm ;;
         8) check_and_update_realm_binary ;;
-        9) check_and_update_script ;;
         10) show_realm_status ;;
         0) echo -e "${GREEN}退出脚本，再见！${NC}"; exit 0 ;;
         *) echo -e "${RED}无效选项，请输入 0-10${NC}" ;;
