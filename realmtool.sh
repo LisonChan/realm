@@ -299,6 +299,28 @@ show_realm_status() {
     echo "-----------------------------------"
 }
 
+# 更新脚本
+update_self() {
+    echo -e "${GREEN}正在检查最新脚本...${NC}"
+    local tmp_file="/tmp/realmtool_new.sh"
+    
+    if curl -fsSL -o "$tmp_file" "$SCRIPT_URL"; then
+        if [ -s "$tmp_file" ]; then
+            mv "$tmp_file" "$SCRIPT_PATH"
+            chmod +x "$SCRIPT_PATH"
+            echo -e "${GREEN}脚本已成功更新为最新版本！${NC}"
+            echo -e "${YELLOW}正在重新启动脚本...${NC}"
+            exec "$SCRIPT_PATH"
+        else
+            echo -e "${RED}下载的文件为空，更新失败${NC}"
+            rm -f "$tmp_file"
+        fi
+    else
+        echo -e "${RED}下载失败，请检查网络或链接是否正确${NC}"
+        rm -f "$tmp_file"
+    fi
+}
+
 # 显示菜单
 show_menu() {
     clear
@@ -313,6 +335,7 @@ show_menu() {
     echo "7. 一键卸载"
     echo "8. 检查并更新 Realm 二进制"
     echo "9. 查看 Realm 状态"
+    echo "10. 更新脚本"
     echo "0. 退出脚本"
     echo "================================================="
     echo -e "Realm 状态：${realm_status_color}${realm_status}${NC}"
@@ -323,7 +346,7 @@ show_menu() {
 # 主循环
 while true; do
     show_menu
-    read -p "请选择一个选项 [0-9]: " choice
+    read -p "请选择一个选项 [0-10]: " choice
     case $choice in
         1) deploy_realm ;;
         2) add_forward ;;
@@ -334,6 +357,7 @@ while true; do
         7) uninstall_realm ;;
         8) check_and_update_realm_binary ;;
         9) show_realm_status ;;
+        10) update_self ;;
         0) echo -e "${GREEN}退出脚本，再见！${NC}"; exit 0 ;;
         *) echo -e "${RED}无效选项，请输入 0-10${NC}" ;;
     esac
