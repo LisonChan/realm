@@ -13,6 +13,7 @@ NC='\033[0m'
 
 # 当前脚本路径
 SCRIPT_PATH=$(readlink -f "$0")
+SCRIPT_URL="https://raw.githubusercontent.com/LisonChan/realm/refs/heads/main/realmtool.sh"
 
 # root 权限检查
 if [ "$EUID" -ne 0 ]; then
