@@ -312,7 +312,7 @@ show_menu() {
     echo "6. 重启服务"
     echo "7. 一键卸载"
     echo "8. 检查并更新 Realm 二进制"
-    echo "10. 查看 Realm 状态"
+    echo "9. 查看 Realm 状态"
     echo "0. 退出脚本"
     echo "================================================="
     echo -e "Realm 状态：${realm_status_color}${realm_status}${NC}"
@@ -323,7 +323,7 @@ show_menu() {
 # 主循环
 while true; do
     show_menu
-    read -p "请选择一个选项 [0-10]: " choice
+    read -p "请选择一个选项 [0-9]: " choice
     case $choice in
         1) deploy_realm ;;
         2) add_forward ;;
@@ -333,7 +333,7 @@ while true; do
         6) restart_service ;;
         7) uninstall_realm ;;
         8) check_and_update_realm_binary ;;
-        10) show_realm_status ;;
+        9) show_realm_status ;;
         0) echo -e "${GREEN}退出脚本，再见！${NC}"; exit 0 ;;
         *) echo -e "${RED}无效选项，请输入 0-10${NC}" ;;
     esac
